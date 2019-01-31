@@ -22,6 +22,7 @@
         vm.page = {};
         vm.isParticipated = false;
         vm.isActive = false;
+        vm.phaseSplitVisibility = false;
         vm.phases = {};
         vm.phaseSplits = {};
         vm.isValid = {};
@@ -1643,17 +1644,86 @@
             });
         };
 
-        $scope.$on('$destroy', function() {
-            vm.stopFetchingSubmissions();
-            vm.stopLeaderboard();
-        });
+        vm.togglePhaseSplitVisibility = function(ev) {
+            ev.stopPropagation();
+            vm.togglePhaseSplitState = null;
 
-        $rootScope.$on('$stateChangeStart', function() {
-            vm.phase = {};
-            vm.isResult = false;
-            vm.stopFetchingSubmissions();
-            vm.stopLeaderboard();
-        });
+            if(vm.phaseSplitVisibility)
+                vm.togglePhaseSplitState = "private";
+            else
+                vm.togglePhaseSplitState = "public";
+
+            var confirm = $mdDialog.confirm()
+                          .title('Make the phase split state ' + vm.togglePhaseSplitState + '?')
+                          .ariaLabel('')
+                          .targetEvent(ev)
+                          .ok('I\'m sure')
+                          .cancel('No.');
+
+            $mdDialog.show(confirm).then(function() {
+                parameters.url = "challenges/challenge/create/challenge_phase_split/" + vm.phaseSplitId + "/";
+                parameters.method = 'PATCH';
+                if(vm.phaseSplitVisibility){
+                    parameters.data = {
+                        "visibility": 1,
+                    };
+                }
+                else{
+                    parameters.data = {
+                        "visibility": 3,
+                    };
+                }
+
+                vm.phaseSplitVisibility = !vm.phaseSplitVisibility;
+
+                parameters.callback = {
+                    onSuccess: function(response) {
+                        var status = response.status;
+                        if (status === 200) {
+                            $mdDialog.hide();
+                            $rootScope.notify("success", "The challenge phase split was successfully made " + vm.togglePhaseSplitState);
+                            $state.go('web.challenge-main.challenge-page.leaderboard');
+                        }
+                    },
+                    onError: function(response) {
+                        $mdDialog.hide();
+                        vm.page.description = vm.tempDesc;
+                        var error = response.data;
+                        $rootScope.notify("error", error);
+                    }
+                };
+
+                utilities.sendRequest(parameters);
+            }, function() {
+            // Nope
+            });
+
+        };
+
+
+        vm.isPhaseSplitVisible = function() {
+            var currentPhaseSplitVisibility = null;
+            // get details of the particular challenge phase split
+            parameters.url = "challenges/challenge/create/challenge_phase_split/" + vm.phaseSplitId + "/";
+            parameters.method = 'GET';
+            parameters.data = {};
+            parameters.callback = {
+                onSuccess: function(response) {
+                    var details = response.data;
+                    if(details["visibility"]===3)
+                        vm.phaseSplitVisibility = true;
+                    utilities.hideLoader();
+                },
+                onError: function(response) {
+                    var error = response.data;
+                    utilities.storeData('emailError', error.detail);
+                    $state.go('web.permission-denied');
+                    utilities.hideLoader();
+                }
+            };
+            utilities.sendRequest(parameters);
+
+        }
     }
 
 })();

@@ -21,10 +21,10 @@ from rest_framework import permissions, status
 from rest_framework.decorators import (api_view,
                                        authentication_classes,
                                        permission_classes,
-                                       throttle_classes,)
+                                       throttle_classes, )
 from rest_framework.response import Response
 from rest_framework_expiring_authtoken.authentication import (
-    ExpiringTokenAuthentication,)
+    ExpiringTokenAuthentication, )
 from rest_framework.throttling import UserRateThrottle, AnonRateThrottle
 
 from yaml.scanner import ScannerError
@@ -37,13 +37,13 @@ from challenges.utils import (get_challenge_model,
                               get_dataset_split_model,
                               get_leaderboard_model)
 from hosts.models import ChallengeHost, ChallengeHostTeam
-from hosts.utils import get_challenge_host_teams_for_user, is_user_a_host_of_challenge, get_challenge_host_team_model
+from hosts.utils import get_challenge_host_teams_for_user, is_user_a_host_of_challenge, get_challenge_host_team_model,is_user_part_of_host_team
 from jobs.models import Submission
 from jobs.serializers import SubmissionSerializer, ChallengeSubmissionManagementSerializer
 from participants.models import Participant, ParticipantTeam
 from participants.utils import (get_participant_teams_for_user,
                                 has_user_participated_in_challenge,
-                                get_participant_team_id_of_user_for_a_challenge,)
+                                get_participant_team_id_of_user_for_a_challenge, )
 
 from .models import (Challenge,
                      ChallengePhase,
@@ -60,13 +60,13 @@ from .serializers import (ChallengeConfigSerializer,
                           LeaderboardSerializer,
                           StarChallengeSerializer,
                           ZipChallengeSerializer,
-                          ZipChallengePhaseSplitSerializer,)
+                          ZipChallengePhaseSplitSerializer, )
 from .utils import get_file_content
 
 logger = logging.getLogger(__name__)
 
 try:
-    xrange          # Python 2
+    xrange  # Python 2
 except NameError:
     xrange = range  # Python 3
 
@@ -164,7 +164,6 @@ def challenge_detail(request, challenge_host_team_pk, challenge_pk):
 @permission_classes((permissions.IsAuthenticated, HasVerifiedEmail))
 @authentication_classes((ExpiringTokenAuthentication,))
 def add_participant_team_to_challenge(request, challenge_pk, participant_team_pk):
-
     try:
         challenge = Challenge.objects.get(pk=challenge_pk)
     except Challenge.DoesNotExist:
@@ -221,7 +220,7 @@ def add_participant_team_to_challenge(request, challenge_pk, participant_team_pk
     for user in participant_team_user_ids:
         if has_user_participated_in_challenge(user, challenge_pk):
             response_data = {'error': 'Sorry, other team member(s) have already participated in the Challenge.'
-                             ' Please participate with a different team!',
+                                      ' Please participate with a different team!',
                              'challenge_id': int(challenge_pk), 'participant_team_id': int(participant_team_pk)}
             return Response(response_data, status=status.HTTP_406_NOT_ACCEPTABLE)
 
@@ -864,7 +863,7 @@ def create_challenge_using_zip_file(request, challenge_host_team_pk):
                 if serializer.is_valid():
                     serializer.save()
                     challenge_phase_ids[str(data['id'])
-                                        ] = serializer.instance.pk
+                    ] = serializer.instance.pk
                 else:
                     response_data = serializer.errors
 
@@ -922,15 +921,15 @@ def create_challenge_using_zip_file(request, challenge_host_team_pk):
             team_name = "Host_{}_Team".format(random.randint(1, 100000))
             participant_host_team = ParticipantTeam(
                 team_name=team_name,
-                created_by=challenge_host_team.created_by,)
+                created_by=challenge_host_team.created_by, )
             participant_host_team.save()
             for email in emails:
                 user = User.objects.get(email=email)
                 host = Participant(
-                            user=user,
-                            status=Participant.ACCEPTED,
-                            team=participant_host_team,
-                    )
+                    user=user,
+                    status=Participant.ACCEPTED,
+                    team=participant_host_team,
+                )
                 host.save()
             challenge.participant_teams.add(participant_host_team)
 
@@ -938,7 +937,7 @@ def create_challenge_using_zip_file(request, challenge_host_team_pk):
             zip_config.save()
             response_data = {
                 'success': 'Challenge {} has been created successfully and'
-                ' sent for review to EvalAI Admin.'.format(challenge.title)}
+                           ' sent for review to EvalAI Admin.'.format(challenge.title)}
             return Response(response_data, status=status.HTTP_201_CREATED)
 
     except:
@@ -1032,7 +1031,6 @@ def get_all_submissions_of_challenge(request, challenge_pk, challenge_phase_pk):
 @permission_classes((permissions.IsAuthenticated, HasVerifiedEmail))
 @authentication_classes((ExpiringTokenAuthentication,))
 def download_all_submissions(request, challenge_pk, challenge_phase_pk, file_type):
-
     # To check for the corresponding challenge from challenge_pk.
     challenge = get_challenge_model(challenge_pk)
 
@@ -1255,16 +1253,29 @@ def get_or_update_challenge_phase_split(request, challenge_phase_split_pk):
     """
     challenge_phase_split = get_challenge_phase_split_model(
         challenge_phase_split_pk)
+    challenge_phase_id = ChallengePhaseSplit.objects.filter(pk=challenge_phase_split_pk).values_list('challenge_phase_id', flat=True)[0]
+    challenge_id = ChallengePhase.objects.filter(pk=challenge_phase_id).values_list('challenge_id', flat=True)[0]
+
+    #   Check if user is a challenge host
+    is_user_host = is_user_a_host_of_challenge(request.user, challenge_id)
+
+    #   Check if user is a member of challenge host team
+    host_team_ids = get_challenge_host_teams_for_user(request.user)
+    is_user_member_of_host_team = is_user_part_of_host_team(request.user, host_team_ids)
 
     if request.method == 'PATCH':
-        serializer = ZipChallengePhaseSplitSerializer(challenge_phase_split,
-                                                      data=request.data,
-                                                      partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            response_data = serializer.data
-            return Response(response_data, status=status.HTTP_200_OK)
-        return Response(serializer.erros, status=status.HTTP_400_BAD_REQUEST)
+        if is_user_host or is_user_member_of_host_team:
+            serializer = ZipChallengePhaseSplitSerializer(challenge_phase_split,
+                                                          data=request.data,
+                                                          partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                response_data = serializer.data
+                return Response(response_data, status=status.HTTP_200_OK)
+            return Response(serializer.erros, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            response_data = {'error': 'Only hosts are allowed to change phase split visibility!'}
+            return Response(response_data, status=status.HTTP_400_BAD_REQUEST)
 
     if request.method == 'GET':
         serializer = ZipChallengePhaseSplitSerializer(challenge_phase_split)
